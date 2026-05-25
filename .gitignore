@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+processed.txt
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+TEMP_test/
+temp_photos_for_test
