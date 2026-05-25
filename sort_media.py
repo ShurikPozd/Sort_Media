@@ -19,9 +19,11 @@ def save_processed(file_path, processed_set):
         f.write(str(file_path) + "\n")
     processed_set.add(str(file_path))
 
-def get_image_model(image_path):
+def get_media_model(file_path):
+    """Извлекает модель камеры из EXIF для изображений или метаданных видео.
+       Для видео пока не реализовано (можно расширить), но оставим для фото."""
     try:
-        with Image.open(image_path) as img:
+        with Image.open(file_path) as img:
             exifdata = img.getexif()
             for tag_id, value in exifdata.items():
                 if TAGS.get(tag_id) == 'Model':
@@ -48,6 +50,7 @@ def main():
     target_live_videos_input = input("Папка для видео Live Photo (оставьте пустым, чтобы пропустить): ").strip()
     target_other_videos_input = input("Папка для остальных видео (оставьте пустым, чтобы пропустить): ").strip()
     target_other_files_input = input("Папка для прочих файлов (всё остальное, оставьте пустым, чтобы пропустить): ").strip()
+    target_other_cameras_input = input("Папка для фото/видео с других камер (будут созданы подпапки по модели) – оставьте пустым, чтобы пропустить: ").strip()
     action = input("\nmove/copy? ").strip().lower()
 
     if not source.exists():
@@ -58,7 +61,9 @@ def main():
     target_live_videos = Path(target_live_videos_input) if target_live_videos_input else None
     target_other_videos = Path(target_other_videos_input) if target_other_videos_input else None
     target_other_files = Path(target_other_files_input) if target_other_files_input else None
+    target_other_cameras = Path(target_other_cameras_input) if target_other_cameras_input else None
 
+    # Создаём папки
     if target_photos:
         target_photos.mkdir(parents=True, exist_ok=True)
     if target_live_videos:
@@ -67,6 +72,8 @@ def main():
         target_other_videos.mkdir(parents=True, exist_ok=True)
     if target_other_files:
         target_other_files.mkdir(parents=True, exist_ok=True)
+    if target_other_cameras:
+        target_other_cameras.mkdir(parents=True, exist_ok=True)
 
     if not target_photos:
         print("Папка для фото не указана. Фото и Live-видео обрабатываться не будут.")
@@ -82,6 +89,8 @@ def main():
         target_paths.add(target_other_videos.resolve())
     if target_other_files:
         target_paths.add(target_other_files.resolve())
+    if target_other_cameras:
+        target_paths.add(target_other_cameras.resolve())
 
     def is_inside_targets(path):
         path_abs = path.resolve()
@@ -99,18 +108,18 @@ def main():
             continue
         all_files[file.name] = file
 
-    # --- Фото с указанной моделью ---
+    # --- Фото с целевой моделью ---
     selected_photos = []
     if target_photos:
         for file in all_files.values():
             if str(file) in processed:
                 continue
             if file.suffix.lower() in ('.jpg', '.jpeg', '.png', '.heic', '.heif'):
-                model = get_image_model(file)
+                model = get_media_model(file)
                 if model and target_model.lower() in model.lower():
                     selected_photos.append(file)
 
-    # --- Live-видео ---
+    # --- Live-видео (по найденным фото) ---
     live_video_names = set()
     if target_live_videos and selected_photos:
         for photo in selected_photos:
@@ -120,7 +129,7 @@ def main():
                 if vid_name in all_files:
                     live_video_names.add(vid_name)
 
-    # --- Перемещение фото ---
+    # --- Перемещение целевых фото ---
     count_photos = 0
     if target_photos:
         for photo in selected_photos:
@@ -175,6 +184,42 @@ def main():
                     except Exception as e:
                         print(f"Ошибка видео {file.name}: {e}")
 
+    # --- Медиа (фото и видео) с других камер (имеют модель, не целевую, и не Live) ---
+    count_other_cameras = 0
+    if target_other_cameras:
+        for file in all_files.values():
+            if str(file) in processed:
+                continue
+            # Проверяем, является ли файл фото или видео (кроме Live)
+            is_photo = file.suffix.lower() in ('.jpg', '.jpeg', '.png', '.heic', '.heif')
+            is_video = file.suffix.lower() in ('.mov', '.mp4', '.avi', '.mkv')
+            if not (is_photo or is_video):
+                continue
+            # Исключаем уже обработанные Live-видео
+            if is_video and file.name in live_video_names:
+                continue
+            # Исключаем фото, которые уже были обработаны как целевые (но они в processed)
+            model = get_media_model(file) if is_photo else None  # Для видео модель не извлекаем (можно расширить)
+            # Для видео модель пока не определяем, но можно оставить как None
+            # Если модель не определена, пропускаем (уйдёт в other)
+            if model and target_model.lower() not in model.lower():
+                safe_model = "".join(c for c in model if c.isalnum() or c in " ._-").strip()
+                if not safe_model:
+                    safe_model = "unknown_model"
+                dest_folder = target_other_cameras / safe_model
+                dest_folder.mkdir(parents=True, exist_ok=True)
+                dest = dest_folder / file.name
+                try:
+                    if action == 'move':
+                        shutil.move(str(file), str(dest))
+                    else:
+                        shutil.copy2(str(file), str(dest))
+                    print(f"Медиа (другая модель): {file.name} -> {target_other_cameras.name}/{safe_model}")
+                    count_other_cameras += 1
+                    save_processed(file, processed)
+                except Exception as e:
+                    print(f"Ошибка перемещения {file.name} в другую модель: {e}")
+
     # --- Прочие файлы (все, что не было обработано выше) ---
     count_other_files = 0
     if target_other_files:
@@ -182,7 +227,7 @@ def main():
             if str(file) in processed:
                 continue
             if not file.exists():
-                continue  # файл уже перемещён и не существует
+                continue
             dest = target_other_files / file.name
             try:
                 if action == 'move':
@@ -203,16 +248,16 @@ def main():
         print(f"Видео Live Photo: {count_live}")
     if target_other_videos:
         print(f"Остальные видео: {count_other_videos}")
+    if target_other_cameras:
+        print(f"Медиа с других камер (отсортированы по моделям): {count_other_cameras}")
     if target_other_files:
         print(f"Прочие файлы (всё остальное): {count_other_files}")
 
-    # Если ни один файл не был обработан ни в одной категории
-    if (count_photos == 0 and count_live == 0 and
-        count_other_videos == 0 and count_other_files == 0):
+    if (count_photos == 0 and count_live == 0 and count_other_videos == 0 and
+        count_other_cameras == 0 and count_other_files == 0):
         print("\n⚠️ Не найдено новых необработанных файлов.")
         print("Все файлы в исходной папке уже были обработаны ранее.")
-        print("Если вы хотите обработать их заново (например, сменив модель или целевые папки),")
-        print(f"удалите файл '{PROCESSED_LOG}' и запустите скрипт снова.")
+        print(f"Чтобы обработать заново, удалите файл '{PROCESSED_LOG}'.")
 
 if __name__ == "__main__":
     main()
