@@ -39,8 +39,8 @@
 
 2. **Склонируйте репозиторий** (или скачайте ZIP):
    ```bash
-   git clone https://github.com/ShurikPozd/sort_iphone_photos.git
-   cd sort_iphone_photos
+   git clone https://github.com/ShurikPozd/Sort_Media.git
+   cd Sort_Media
    ```
 
 3. **Установите зависимости**:
@@ -50,7 +50,7 @@
 
 4. **Запустите скрипт**:
    ```bash
-   python sort_iphone_media.py
+   python sort_media.py
    ```
 
 ## 📖 Использование
@@ -83,6 +83,6 @@ MIT © Alexander Pozdnyakov
 
 ## 🌐 Ссылки
 
-- GitHub: [ShurikPozd/sort_iphone_photos](https://github.com/ShurikPozd/sort_iphone_photos)
+- GitHub: [ShurikPozd/sort_iphone_photos](https://github.com/ShurikPozd/Sort_Media)
 - Telegram: [@ShurikPozd](https://t.me/ShurikPozd)
 - По вопросам и предложениям – пишите.
