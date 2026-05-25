@@ -20,8 +20,7 @@ def save_processed(file_path, processed_set):
     processed_set.add(str(file_path))
 
 def get_media_model(file_path):
-    """Извлекает модель камеры из EXIF для изображений или метаданных видео.
-       Для видео пока не реализовано (можно расширить), но оставим для фото."""
+    """Извлекает модель камеры из EXIF для изображений."""
     try:
         with Image.open(file_path) as img:
             exifdata = img.getexif()
@@ -50,7 +49,7 @@ def main():
     target_live_videos_input = input("Папка для видео Live Photo (оставьте пустым, чтобы пропустить): ").strip()
     target_other_videos_input = input("Папка для остальных видео (оставьте пустым, чтобы пропустить): ").strip()
     target_other_files_input = input("Папка для прочих файлов (всё остальное, оставьте пустым, чтобы пропустить): ").strip()
-    target_other_cameras_input = input("Папка для фото/видео с других камер (будут созданы подпапки по модели) – оставьте пустым, чтобы пропустить: ").strip()
+    target_other_cameras_input = input("Папка для медиа с других камер (будут созданы подпапки по модели) – оставьте пустым, чтобы пропустить: ").strip()
     action = input("\nmove/copy? ").strip().lower()
 
     if not source.exists():
@@ -108,10 +107,29 @@ def main():
             continue
         all_files[file.name] = file
 
+    # --- Ограничение количества обрабатываемых файлов ---
+    all_files_list = list(all_files.values())
+    total_found = len(all_files_list)
+    print(f"\n📁 Найдено файлов: {total_found}")
+
+    limit_input = input("Сколько файлов обработать (0 — все): ").strip()
+    try:
+        limit = int(limit_input)
+        if limit <= 0:
+            limit = total_found
+    except:
+        limit = total_found
+
+    if limit < total_found:
+        print(f"⚠️ Будет обработано только {limit} из {total_found} файлов (первые в порядке обхода).")
+        all_files_list = all_files_list[:limit]
+    else:
+        print(f"✅ Будут обработаны все {total_found} файлов.")
+
     # --- Фото с целевой моделью ---
     selected_photos = []
     if target_photos:
-        for file in all_files.values():
+        for file in all_files_list:
             if str(file) in processed:
                 continue
             if file.suffix.lower() in ('.jpg', '.jpeg', '.png', '.heic', '.heif'):
@@ -167,7 +185,7 @@ def main():
     # --- Остальные видео (не Live) ---
     count_other_videos = 0
     if target_other_videos:
-        for file in all_files.values():
+        for file in all_files_list:
             if str(file) in processed:
                 continue
             if file.suffix.lower() in ('.mov', '.mp4', '.avi', '.mkv'):
@@ -184,24 +202,19 @@ def main():
                     except Exception as e:
                         print(f"Ошибка видео {file.name}: {e}")
 
-    # --- Медиа (фото и видео) с других камер (имеют модель, не целевую, и не Live) ---
+    # --- Медиа с других камер (имеют модель, не целевую, и не Live) ---
     count_other_cameras = 0
     if target_other_cameras:
-        for file in all_files.values():
+        for file in all_files_list:
             if str(file) in processed:
                 continue
-            # Проверяем, является ли файл фото или видео (кроме Live)
             is_photo = file.suffix.lower() in ('.jpg', '.jpeg', '.png', '.heic', '.heif')
             is_video = file.suffix.lower() in ('.mov', '.mp4', '.avi', '.mkv')
             if not (is_photo or is_video):
                 continue
-            # Исключаем уже обработанные Live-видео
             if is_video and file.name in live_video_names:
                 continue
-            # Исключаем фото, которые уже были обработаны как целевые (но они в processed)
-            model = get_media_model(file) if is_photo else None  # Для видео модель не извлекаем (можно расширить)
-            # Для видео модель пока не определяем, но можно оставить как None
-            # Если модель не определена, пропускаем (уйдёт в other)
+            model = get_media_model(file) if is_photo else None
             if model and target_model.lower() not in model.lower():
                 safe_model = "".join(c for c in model if c.isalnum() or c in " ._-").strip()
                 if not safe_model:
@@ -223,7 +236,7 @@ def main():
     # --- Прочие файлы (все, что не было обработано выше) ---
     count_other_files = 0
     if target_other_files:
-        for file in all_files.values():
+        for file in all_files_list:
             if str(file) in processed:
                 continue
             if not file.exists():
@@ -241,20 +254,38 @@ def main():
                 print(f"Ошибка прочего файла {file.name}: {e}")
 
     # --- Вывод итогов ---
+    total_processed = (count_photos + count_live + count_other_videos +
+                       count_other_cameras + count_other_files)
     print(f"\n✅ Готово!")
-    if target_photos:
-        print(f"Фото (модель '{target_model}'): {count_photos}")
-    if target_live_videos:
-        print(f"Видео Live Photo: {count_live}")
-    if target_other_videos:
-        print(f"Остальные видео: {count_other_videos}")
-    if target_other_cameras:
-        print(f"Медиа с других камер (отсортированы по моделям): {count_other_cameras}")
-    if target_other_files:
-        print(f"Прочие файлы (всё остальное): {count_other_files}")
+    print(f"📊 Всего обработано файлов за этот запуск: {total_processed}")
 
-    if (count_photos == 0 and count_live == 0 and count_other_videos == 0 and
-        count_other_cameras == 0 and count_other_files == 0):
+    # Определяем, сколько файлов осталось необработанными
+    # total_found - общее количество файлов, найденных при сканировании
+    # limit - количество файлов, выбранных для обработки (если был лимит)
+    if limit < total_found:
+        # Если был ограничен лимит, то необработанными остались (total_found - limit) файлов
+        not_processed = total_found - limit
+        print(f"📁 Осталось необработанных файлов (не попали в лимит): {not_processed}")
+    else:
+        # Если обрабатывались все файлы, то необработанными остались те, которые не подошли ни под одну категорию
+        not_processed = total_found - total_processed
+        if not_processed > 0:
+            print(f"📁 Осталось необработанных файлов (не подошли ни под одну категорию): {not_processed}")
+        else:
+            print(f"📁 Все найденные файлы обработаны.")
+
+    if target_photos:
+        print(f"  - Фото (модель '{target_model}'): {count_photos}")
+    if target_live_videos:
+        print(f"  - Видео Live Photo: {count_live}")
+    if target_other_videos:
+        print(f"  - Остальные видео: {count_other_videos}")
+    if target_other_cameras:
+        print(f"  - Медиа с других камер (отсортированы по моделям): {count_other_cameras}")
+    if target_other_files:
+        print(f"  - Прочие файлы (всё остальное): {count_other_files}")
+
+    if total_processed == 0 and not_processed == total_found:
         print("\n⚠️ Не найдено новых необработанных файлов.")
         print("Все файлы в исходной папке уже были обработаны ранее.")
         print(f"Чтобы обработать заново, удалите файл '{PROCESSED_LOG}'.")
