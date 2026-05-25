@@ -83,6 +83,6 @@ MIT © Alexander Pozdnyakov
 
 ## 🌐 Ссылки
 
-- GitHub: [ShurikPozd/sort_iphone_photos](https://github.com/ShurikPozd/Sort_Media)
+- GitHub: [ShurikPozd/Sort_Media](https://github.com/ShurikPozd/Sort_Media)
 - Telegram: [@ShurikPozd](https://t.me/ShurikPozd)
 - По вопросам и предложениям – пишите.
